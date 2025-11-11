@@ -60,11 +60,6 @@ python window-switcher-app.py
 
 ---
 
-## Interface Preview
-(You can add a screenshot or GIF here once available)
-
----
-
 ## Tech Stack
 - Python 3.10+
 - PyQt6 6.9.1
