@@ -1,33 +1,22 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[ ]:
-
-
 import sys, ctypes
 from pathlib import Path
 import win32gui, win32con
 from PyQt6 import QtWidgets, QtCore, QtGui
 
 
-# ---------- 設定應用程式 AppID（讓 Windows 正確顯示自訂圖示） ----------
 try:
     ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("WindowSwitcher.App")
 except Exception:
     pass
 
 
-# ---------- 工具函式：取得圖示絕對路徑 ----------
 def icon_path(name="switcher-icon.ico") -> Path:
     try:
-        # 若為執行 .py 檔案
         return (Path(__file__).resolve().parent / name)
     except NameError:
-        # 若在 Jupyter 或互動環境中執行，改用目前工作資料夾
         return (Path.cwd() / name)
 
 
-# ---------- 取得目前可見視窗 ----------
 def list_windows():
     results = []
 
@@ -40,7 +29,6 @@ def list_windows():
     return results
 
 
-# ---------- 將指定視窗叫到前面 ----------
 def activate_window(hwnd):
     try:
         win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
@@ -49,9 +37,31 @@ def activate_window(hwnd):
         pass
 
 
-# ---------- 收合狀態的圓形按鈕 ----------
+def hide_from_alt_tab(widget):
+    hwnd = int(widget.winId())
+
+    GWL_EXSTYLE = -20
+    WS_EX_TOOLWINDOW = 0x00000080
+    WS_EX_APPWINDOW = 0x00040000
+
+    ex_style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+    ex_style = ex_style | WS_EX_TOOLWINDOW
+    ex_style = ex_style & ~WS_EX_APPWINDOW
+    ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
+
+    SWP_NOMOVE = 0x0002
+    SWP_NOSIZE = 0x0001
+    SWP_NOZORDER = 0x0004
+    SWP_FRAMECHANGED = 0x0020
+
+    ctypes.windll.user32.SetWindowPos(
+        hwnd, 0, 0, 0, 0, 0,
+        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED
+    )
+
+
 class CollapsedIcon(QtWidgets.QPushButton):
-    expanded = QtCore.pyqtSignal()  # 點擊後會觸發展開訊號
+    expanded = QtCore.pyqtSignal()
 
     def __init__(self):
         super().__init__("●")
@@ -94,17 +104,18 @@ class CollapsedIcon(QtWidgets.QPushButton):
         self.start_pos = None
 
 
-# ---------- 主視窗 ----------
 class WindowHUD(QtWidgets.QWidget):
     def __init__(self, icon=None):
         super().__init__()
         self.setWindowTitle("Window Switcher HUD")
-        self.setWindowFlag(QtCore.Qt.WindowType.WindowStaysOnTopHint)
+        self.setWindowFlags(
+            QtCore.Qt.WindowType.Tool |
+            QtCore.Qt.WindowType.WindowStaysOnTopHint
+        )
 
         if icon is not None:
             self.setWindowIcon(icon)
 
-        # 可水平調整大小
         self.setMinimumWidth(200)
         self.setMaximumWidth(8000)
         self.setSizePolicy(
@@ -112,11 +123,10 @@ class WindowHUD(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Policy.Preferred
         )
 
-        self.pinned = {}  # 儲存已釘選的視窗
+        self.pinned = {}
         self.layout = QtWidgets.QVBoxLayout()
         self.setLayout(self.layout)
 
-        # ---------- 上方功能列 ----------
         top_bar = QtWidgets.QHBoxLayout()
         self.add_window_btn = QtWidgets.QPushButton("+")
         self.refresh_btn = QtWidgets.QPushButton("⟳")
@@ -143,7 +153,6 @@ class WindowHUD(QtWidgets.QWidget):
         self.layout.addLayout(top_bar)
         self.layout.addSpacing(5)
 
-        # 功能連結
         self.add_window_btn.clicked.connect(self.select_window_to_pin)
         self.refresh_btn.clicked.connect(self.refresh_window_list)
         self.collapse_btn.clicked.connect(self.collapse)
@@ -152,7 +161,6 @@ class WindowHUD(QtWidgets.QWidget):
         self.collapsed_icon.expanded.connect(self.expand_back)
         self.available_windows = list_windows()
 
-    # ---------- 收合與展開 ----------
     def collapse(self):
         screen = QtWidgets.QApplication.primaryScreen().geometry()
         icon_x = screen.width() - self.collapsed_icon.width() - 5
@@ -160,6 +168,7 @@ class WindowHUD(QtWidgets.QWidget):
         self.hide()
         self.collapsed_icon.move(icon_x, icon_y)
         self.collapsed_icon.show()
+        hide_from_alt_tab(self.collapsed_icon)
 
     def expand_back(self):
         screen = QtWidgets.QApplication.primaryScreen().geometry()
@@ -168,8 +177,8 @@ class WindowHUD(QtWidgets.QWidget):
         self.collapsed_icon.hide()
         self.move(hud_x, hud_y)
         self.show()
+        hide_from_alt_tab(self)
 
-    # ---------- 視窗清單 ----------
     def refresh_window_list(self):
         self.available_windows = list_windows()
         QtWidgets.QMessageBox.information(self, "", "視窗清單已更新 ✓")
@@ -206,7 +215,6 @@ class WindowHUD(QtWidgets.QWidget):
                 btn.setText(win32gui.GetWindowText(hwnd))
 
 
-# ---------- 主程式 ----------
 if __name__ == "__main__":
     app = QtWidgets.QApplication(sys.argv)
 
@@ -217,15 +225,11 @@ if __name__ == "__main__":
     hud = WindowHUD(icon)
     hud.show()
 
+    hide_from_alt_tab(hud)
+    hide_from_alt_tab(hud.collapsed_icon)
+
     timer = QtCore.QTimer()
     timer.timeout.connect(hud.refresh_titles)
     timer.start(1000)
 
     sys.exit(app.exec())
-
-
-# In[ ]:
-
-
-
-
