@@ -122,6 +122,7 @@ class WindowHUD(QtWidgets.QWidget):
             QtWidgets.QSizePolicy.Policy.Expanding,
             QtWidgets.QSizePolicy.Policy.Preferred
         )
+        self.top_buttons = []
 
         self.pinned = {}
         self.layout = QtWidgets.QVBoxLayout()
@@ -134,17 +135,8 @@ class WindowHUD(QtWidgets.QWidget):
 
         for btn in (self.add_window_btn, self.refresh_btn, self.collapse_btn):
             btn.setFixedSize(30, 30)
-            btn.setStyleSheet("""
-                QPushButton {
-                    font-size: 16px;
-                    border: none;
-                    background: #f0f0f0;
-                    border-radius: 6px;
-                }
-                QPushButton:hover {
-                    background: #e0e0e0;
-                }
-            """)
+            self.top_buttons.append(btn)
+        self.apply_top_button_style()
 
         top_bar.addWidget(self.add_window_btn)
         top_bar.addWidget(self.refresh_btn)
@@ -160,6 +152,39 @@ class WindowHUD(QtWidgets.QWidget):
         self.collapsed_icon = CollapsedIcon()
         self.collapsed_icon.expanded.connect(self.expand_back)
         self.available_windows = list_windows()
+
+    def apply_top_button_style(self):
+        palette = self.palette()
+        window_color = palette.color(QtGui.QPalette.ColorRole.Window)
+        text_color = palette.color(QtGui.QPalette.ColorRole.ButtonText)
+
+        if window_color.lightness() < 128:
+            background = window_color.name()
+            hover = window_color.lighter(130).name()
+            border = window_color.lighter(145).name()
+        else:
+            background = "#f0f0f0"
+            hover = "#e0e0e0"
+            border = "#f0f0f0"
+
+        for btn in self.top_buttons:
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    font-size: 16px;
+                    color: {text_color.name()};
+                    border: 1px solid {border};
+                    background: {background};
+                    border-radius: 6px;
+                }}
+                QPushButton:hover {{
+                    background: {hover};
+                }}
+            """)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QtCore.QEvent.Type.PaletteChange:
+            self.apply_top_button_style()
 
     def collapse(self):
         screen = QtWidgets.QApplication.primaryScreen().geometry()
@@ -185,6 +210,31 @@ class WindowHUD(QtWidgets.QWidget):
 
     def select_window_to_pin(self):
         self.available_windows = list_windows()
+        selectable_windows = []
+        for hwnd, title in self.available_windows:
+            display_title = title if len(title) <= 90 else f"{title[:87]}..."
+            selectable_windows.append((hwnd, title, display_title))
+
+        dialog = QtWidgets.QInputDialog(self)
+        dialog.setWindowTitle("")
+        dialog.setLabelText("Select window:")
+        dialog.setComboBoxEditable(False)
+        dialog.setComboBoxItems([display_title for _, _, display_title in selectable_windows])
+        dialog.setFixedWidth(520)
+
+        combo = dialog.findChild(QtWidgets.QComboBox)
+        if combo is not None:
+            combo.setMinimumContentsLength(45)
+            combo.setSizeAdjustPolicy(
+                QtWidgets.QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+            )
+
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted and selectable_windows:
+            index = combo.currentIndex() if combo is not None else 0
+            hwnd, title, _ = selectable_windows[index]
+            self.pin_window(hwnd, title)
+        return
+
         items = [title for hwnd, title in self.available_windows]
         item, ok = QtWidgets.QInputDialog.getItem(self, "", "選擇視窗：", items, 0, False)
         if ok and item:
